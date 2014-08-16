@@ -44,12 +44,12 @@ public class HandlebarsView extends AbstractTemplateView {
   /**
    * The compiled template.
    */
-  private Template template;
+  protected Template template;
 
   /**
    * The value's resolvers.
    */
-  private ValueResolver[] valueResolvers;
+  protected ValueResolver[] valueResolvers;
 
   /**
    * Merge model into the view. {@inheritDoc}
@@ -85,7 +85,7 @@ public class HandlebarsView extends AbstractTemplateView {
    *
    * @param template The compiled template. Required.
    */
-  void setTemplate(final Template template) {
+  protected void setTemplate(final Template template) {
     this.template = notNull(template, "A handlebars template is required.");
   }
 
@@ -94,7 +94,7 @@ public class HandlebarsView extends AbstractTemplateView {
    *
    * @param valueResolvers The value resolvers. Required.
    */
-  void setValueResolver(final ValueResolver... valueResolvers) {
+  protected void setValueResolver(final ValueResolver... valueResolvers) {
     this.valueResolvers = notEmpty(valueResolvers,
         "At least one value-resolver must be present.");
   }
