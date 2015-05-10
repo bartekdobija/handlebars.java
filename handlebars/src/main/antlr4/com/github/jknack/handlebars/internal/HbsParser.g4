@@ -5,6 +5,22 @@ options {
 }
 
 @members {
+
+  public String[] tokenNames() {
+    String[] tokenNames = new String[_SYMBOLIC_NAMES.length];
+    for (int i = 0; i < tokenNames.length; i++) {
+      tokenNames[i] = VOCABULARY.getLiteralName(i);
+      if (tokenNames[i] == null) {
+        tokenNames[i] = VOCABULARY.getSymbolicName(i);
+      }
+
+      if (tokenNames[i] == null) {
+        tokenNames[i] = "<INVALID>";
+      }
+    }
+    return tokenNames;
+  }
+
   void setStart(String start) {
   }
 
@@ -116,7 +132,7 @@ delimiters
 
 partial
   :
-    START_PARTIAL PATH QID? END
+    START_PARTIAL PATH QID? hash* END
   ;
 
 param
@@ -125,22 +141,13 @@ param
   | SINGLE_STRING #charParam
   | INT           #intParam
   | BOOLEAN       #boolParam
-  | QID           #refPram
-  | LP sexpr RP #subexpression
+  | QID           #refParam
+  | LP sexpr RP   #subParamExpr
   ;
 
 hash
   :
-    QID EQ hashValue
-  ;
-
-hashValue
-  :
-    DOUBLE_STRING #stringHash
-  | SINGLE_STRING #charHash
-  | INT           #intHash
-  | BOOLEAN       #boolHash
-  | QID           #refHash
+    QID EQ param
   ;
 
 comment

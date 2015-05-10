@@ -17,8 +17,6 @@
  */
 package com.github.jknack.handlebars.internal;
 
-import static org.apache.commons.lang3.Validate.notNull;
-
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -44,11 +42,6 @@ import com.github.jknack.handlebars.Template;
 abstract class HelperResolver extends BaseTemplate {
 
   /**
-   * The handlebars object. Required.
-   */
-  protected final Handlebars handlebars;
-
-  /**
    * The parameter list.
    */
   protected List<Object> params = Collections.emptyList();
@@ -56,7 +49,7 @@ abstract class HelperResolver extends BaseTemplate {
   /**
    * The hash object.
    */
-  private Map<String, Object> hash = Collections.emptyMap();
+  protected Map<String, Object> hash = Collections.emptyMap();
 
   /**
    * Empty parameters.
@@ -69,7 +62,7 @@ abstract class HelperResolver extends BaseTemplate {
    * @param handlebars The handlebars object. Required.
    */
   public HelperResolver(final Handlebars handlebars) {
-    this.handlebars = notNull(handlebars, "The handlebars can't be null.");
+    super(handlebars);
   }
 
   /**
@@ -233,6 +226,25 @@ abstract class HelperResolver extends BaseTemplate {
     for (Object param : this.params) {
       if (param instanceof Variable) {
         ((Variable) param).collect(result, tagType);
+      }
+    }
+  }
+
+  @Override
+  protected void collectReferenceParameters(final Collection<String> result) {
+    for (Object param : this.params) {
+      if (param instanceof Variable) {
+        ((Variable) param).collectReferenceParameters(result);
+      }
+    }
+    for (Object param : params) {
+      if (ParamType.REFERENCE.apply(param) && !ParamType.STRING.apply(param)) {
+        result.add((String) param);
+      }
+    }
+    for (Object hashValue : hash.values()) {
+      if (ParamType.REFERENCE.apply(hashValue) && !ParamType.STRING.apply(hashValue)) {
+        result.add((String) hashValue);
       }
     }
   }

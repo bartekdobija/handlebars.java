@@ -32,9 +32,12 @@ import org.antlr.v4.runtime.RuleContext;
 import org.antlr.v4.runtime.Token;
 import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.runtime.tree.TerminalNode;
+import org.apache.commons.lang3.math.NumberUtils;
 
 import com.github.jknack.handlebars.Context;
 import com.github.jknack.handlebars.Handlebars;
+import com.github.jknack.handlebars.HandlebarsError;
+import com.github.jknack.handlebars.HandlebarsException;
 import com.github.jknack.handlebars.Helper;
 import com.github.jknack.handlebars.HelperRegistry;
 import com.github.jknack.handlebars.TagType;
@@ -42,27 +45,22 @@ import com.github.jknack.handlebars.Template;
 import com.github.jknack.handlebars.internal.HbsParser.AmpvarContext;
 import com.github.jknack.handlebars.internal.HbsParser.BlockContext;
 import com.github.jknack.handlebars.internal.HbsParser.BodyContext;
-import com.github.jknack.handlebars.internal.HbsParser.BoolHashContext;
 import com.github.jknack.handlebars.internal.HbsParser.BoolParamContext;
-import com.github.jknack.handlebars.internal.HbsParser.CharHashContext;
 import com.github.jknack.handlebars.internal.HbsParser.CharParamContext;
 import com.github.jknack.handlebars.internal.HbsParser.CommentContext;
 import com.github.jknack.handlebars.internal.HbsParser.ElseBlockContext;
 import com.github.jknack.handlebars.internal.HbsParser.EscapeContext;
 import com.github.jknack.handlebars.internal.HbsParser.HashContext;
-import com.github.jknack.handlebars.internal.HbsParser.IntHashContext;
 import com.github.jknack.handlebars.internal.HbsParser.IntParamContext;
 import com.github.jknack.handlebars.internal.HbsParser.NewlineContext;
 import com.github.jknack.handlebars.internal.HbsParser.ParamContext;
 import com.github.jknack.handlebars.internal.HbsParser.PartialContext;
-import com.github.jknack.handlebars.internal.HbsParser.RefHashContext;
-import com.github.jknack.handlebars.internal.HbsParser.RefPramContext;
+import com.github.jknack.handlebars.internal.HbsParser.RefParamContext;
 import com.github.jknack.handlebars.internal.HbsParser.SexprContext;
 import com.github.jknack.handlebars.internal.HbsParser.SpacesContext;
 import com.github.jknack.handlebars.internal.HbsParser.StatementContext;
-import com.github.jknack.handlebars.internal.HbsParser.StringHashContext;
 import com.github.jknack.handlebars.internal.HbsParser.StringParamContext;
-import com.github.jknack.handlebars.internal.HbsParser.SubexpressionContext;
+import com.github.jknack.handlebars.internal.HbsParser.SubParamExprContext;
 import com.github.jknack.handlebars.internal.HbsParser.TemplateContext;
 import com.github.jknack.handlebars.internal.HbsParser.TextContext;
 import com.github.jknack.handlebars.internal.HbsParser.TvarContext;
@@ -99,6 +97,11 @@ abstract class TemplateBuilder extends HbsParserBaseVisitor<Object> {
   protected StringBuilder line = new StringBuilder();
 
   /**
+   * Keep track of block helpers.
+   */
+  private LinkedList<String> qualifier = new LinkedList<String>();
+
+  /**
    * Creates a new {@link TemplateBuilder}.
    *
    * @param handlebars A handlbars object. required.
@@ -119,6 +122,7 @@ abstract class TemplateBuilder extends HbsParserBaseVisitor<Object> {
     SexprContext sexpr = ctx.sexpr();
     Token nameStart = sexpr.QID().getSymbol();
     String name = nameStart.getText();
+    qualifier.addLast(name);
     String nameEnd = ctx.nameEnd.getText();
     if (!name.equals(nameEnd)) {
       reportError(null, ctx.nameEnd.getLine(), ctx.nameEnd.getCharPositionInLine()
@@ -151,6 +155,7 @@ abstract class TemplateBuilder extends HbsParserBaseVisitor<Object> {
       }
     }
     hasTag(true);
+    qualifier.removeLast();
     return block;
   }
 
@@ -186,7 +191,7 @@ abstract class TemplateBuilder extends HbsParserBaseVisitor<Object> {
     Token token = ctx.ESC_VAR().getSymbol();
     String text = token.getText().substring(1);
     line.append(text);
-    return new Text(text, "\\")
+    return new Text(handlebars, text, "\\")
         .filename(source.filename())
         .position(token.getLine(), token.getCharPositionInLine());
   }
@@ -223,9 +228,28 @@ abstract class TemplateBuilder extends HbsParserBaseVisitor<Object> {
   private Template newVar(final Token name, final TagType varType, final List<Object> params,
       final Map<String, Object> hash, final String startDelimiter, final String endDelimiter) {
     String varName = name.getText();
+    boolean isHelper = ((params.size() > 0 || hash.size() > 0)
+        || varType == TagType.SUB_EXPRESSION);
+    if (!isHelper && qualifier.size() > 0 && "with".equals(qualifier.getLast())
+        && !varName.startsWith(".")) {
+      // HACK to qualified 'with' in order to improve handlebars.js compatibility
+      varName = "this." + varName;
+    }
+    String[] parts = varName.split("\\./");
+    // TODO: try to catch this with ANTLR...
+    // foo.0 isn't allowed, it must be foo.0.
+    if (parts.length > 0 && NumberUtils.isNumber(parts[parts.length - 1])
+        && !varName.endsWith(".")) {
+      String evidence = varName;
+      String reason = "found: " + varName + ", expecting: " + varName + ".";
+      String message =
+          source.filename() + ":" + name.getLine() + ":" + name.getChannel() + ": "
+              + reason + "\n";
+      throw new HandlebarsException(new HandlebarsError(source.filename(), name.getLine(),
+          name.getCharPositionInLine(), reason, evidence, message));
+    }
     Helper<Object> helper = handlebars.helper(varName);
-    if (helper == null
-        && ((params.size() > 0 || hash.size() > 0) || varType == TagType.SUB_EXPRESSION)) {
+    if (helper == null && isHelper) {
       Helper<Object> helperMissing =
           handlebars.helper(HelperRegistry.HELPER_MISSING);
       if (helperMissing == null) {
@@ -252,7 +276,7 @@ abstract class TemplateBuilder extends HbsParserBaseVisitor<Object> {
     }
     Map<String, Object> result = new LinkedHashMap<String, Object>();
     for (HashContext hc : ctx) {
-      result.put(hc.QID().getText(), super.visit(hc.hashValue()));
+      result.put(hc.QID().getText(), super.visit(hc.param()));
     }
     return result;
   }
@@ -280,25 +304,10 @@ abstract class TemplateBuilder extends HbsParserBaseVisitor<Object> {
   }
 
   @Override
-  public Object visitSubexpression(final SubexpressionContext ctx) {
+  public Object visitSubParamExpr(final SubParamExprContext ctx) {
     SexprContext sexpr = ctx.sexpr();
     return newVar(sexpr.QID().getSymbol(), TagType.SUB_EXPRESSION, params(sexpr.param()),
         hash(sexpr.hash()), ctx.start.getText(), ctx.stop.getText());
-  }
-
-  @Override
-  public Object visitBoolHash(final BoolHashContext ctx) {
-    return Boolean.valueOf(ctx.getText());
-  }
-
-  @Override
-  public Object visitCharHash(final CharHashContext ctx) {
-    return charLiteral(ctx);
-  }
-
-  @Override
-  public Object visitStringHash(final StringHashContext ctx) {
-    return stringLiteral(ctx);
   }
 
   @Override
@@ -328,18 +337,8 @@ abstract class TemplateBuilder extends HbsParserBaseVisitor<Object> {
   }
 
   @Override
-  public Object visitRefHash(final RefHashContext ctx) {
+  public Object visitRefParam(final RefParamContext ctx) {
     return ctx.getText();
-  }
-
-  @Override
-  public Object visitRefPram(final RefPramContext ctx) {
-    return ctx.getText();
-  }
-
-  @Override
-  public Object visitIntHash(final IntHashContext ctx) {
-    return Integer.parseInt(ctx.getText());
   }
 
   @Override
@@ -408,7 +407,7 @@ abstract class TemplateBuilder extends HbsParserBaseVisitor<Object> {
     TerminalNode partialContext = ctx.QID();
     String startDelim = ctx.start.getText();
     Template partial = new Partial(handlebars, uri,
-        partialContext != null ? partialContext.getText() : null)
+        partialContext != null ? partialContext.getText() : null, hash(ctx.hash()))
         .startDelimiter(startDelim.substring(0, startDelim.length() - 1))
         .endDelimiter(ctx.stop.getText())
         .indent(indent)
@@ -427,7 +426,7 @@ abstract class TemplateBuilder extends HbsParserBaseVisitor<Object> {
     if (stats.size() == 1) {
       return visit(stats.get(0));
     }
-    TemplateList list = new TemplateList();
+    TemplateList list = new TemplateList(handlebars);
     Template prev = null;
     for (StatementContext statement : stats) {
       Template candidate = visit(statement);
@@ -466,7 +465,7 @@ abstract class TemplateBuilder extends HbsParserBaseVisitor<Object> {
   public Template visitText(final TextContext ctx) {
     String text = ctx.getText();
     line.append(text);
-    return new Text(text)
+    return new Text(handlebars, text)
         .filename(source.filename())
         .position(ctx.start.getLine(), ctx.start.getCharPositionInLine());
   }
@@ -479,7 +478,7 @@ abstract class TemplateBuilder extends HbsParserBaseVisitor<Object> {
     if (space.getChannel() == Token.HIDDEN_CHANNEL) {
       return null;
     }
-    return new Text(text)
+    return new Text(handlebars, text)
         .filename(source.filename())
         .position(ctx.start.getLine(), ctx.start.getCharPositionInLine());
   }
@@ -491,7 +490,7 @@ abstract class TemplateBuilder extends HbsParserBaseVisitor<Object> {
       return null;
     }
     line.setLength(0);
-    return new Text(newline.getText())
+    return new Text(handlebars, newline.getText())
         .filename(source.filename())
         .position(newline.getLine(), newline.getCharPositionInLine());
   }

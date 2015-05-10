@@ -41,6 +41,7 @@ import org.springframework.web.servlet.ViewResolver;
 import org.springframework.web.servlet.view.AbstractTemplateViewResolver;
 import org.springframework.web.servlet.view.AbstractUrlBasedView;
 
+import com.github.jknack.handlebars.Formatter;
 import com.github.jknack.handlebars.Handlebars;
 import com.github.jknack.handlebars.Helper;
 import com.github.jknack.handlebars.HelperRegistry;
@@ -107,6 +108,14 @@ public class HandlebarsViewResolver extends AbstractTemplateViewResolver
   private boolean deletePartialAfterMerge;
 
   /**
+   * Set variable formatters.
+   */
+  private Formatter[] formatters;
+
+  /** Location of the handlebars.js file. */
+  private String handlebarsJsFile;
+
+  /**
    * Creates a new {@link HandlebarsViewResolver}.
    *
    * @param viewClass The view's class. Required.
@@ -133,12 +142,6 @@ public class HandlebarsViewResolver extends AbstractTemplateViewResolver
   protected AbstractUrlBasedView buildView(final String viewName)
       throws Exception {
     return configure((HandlebarsView) super.buildView(viewName));
-  }
-
-  @Override
-  public HandlebarsView resolveViewName(final String viewName, final Locale locale)
-      throws Exception {
-    return (HandlebarsView) super.resolveViewName(viewName, locale);
   }
 
   /**
@@ -187,6 +190,16 @@ public class HandlebarsViewResolver extends AbstractTemplateViewResolver
         "A handlebars object is required.");
 
     handlebars.with(registry);
+
+    if (handlebarsJsFile != null) {
+      handlebars.handlebarsJsFile(handlebarsJsFile);
+    }
+
+    if (formatters != null) {
+      for (Formatter formatter : formatters) {
+        handlebars.with(formatter);
+      }
+    }
 
     if (registerMessageHelper) {
       // Add a message source helper
@@ -277,6 +290,43 @@ public class HandlebarsViewResolver extends AbstractTemplateViewResolver
   public void setValueResolvers(final ValueResolver... valueResolvers) {
     this.valueResolvers = notEmpty(valueResolvers,
         "At least one value-resolver must be present.");
+  }
+
+  /**
+   * Set variable formatters.
+   *
+   * @param formatters Formatters to add.
+   */
+  public void setFormatters(final Formatter... formatters) {
+    this.formatters = notEmpty(formatters,
+        "At least one formatter must be present.");
+  }
+
+  /**
+   * Set the handlebars.js location used it to compile/precompile template to JavaScript.
+   * <p>
+   * Using handlebars.js 2.x:
+   * </p>
+   *
+   * <pre>
+   *   Handlebars handlebars = new Handlebars()
+   *      .withHandlberasJs("handlebars-v2.0.0.js");
+   * </pre>
+   * <p>
+   * Using handlebars.js 1.x:
+   * </p>
+   *
+   * <pre>
+   *   Handlebars handlebars = new Handlebars()
+   *      .withHandlberasJs("handlebars-v1.3.0.js");
+   * </pre>
+   *
+   * Default handlebars.js is <code>handlebars-v2.0.0.js</code>.
+   *
+   * @param location A classpath location of the handlebar.js file.
+   */
+  public void setHandlebarsJsFile(final String location) {
+    this.handlebarsJsFile = notEmpty(location, "Location is required");
   }
 
   /**

@@ -28,7 +28,10 @@ import java.io.InputStream;
 import java.io.Reader;
 import java.lang.reflect.Array;
 import java.net.URI;
+import java.net.URL;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map.Entry;
 import java.util.Set;
 
@@ -38,6 +41,7 @@ import org.slf4j.Logger;
 import com.github.jknack.handlebars.cache.NullTemplateCache;
 import com.github.jknack.handlebars.cache.TemplateCache;
 import com.github.jknack.handlebars.helper.DefaultHelperRegistry;
+import com.github.jknack.handlebars.internal.FormatterChain;
 import com.github.jknack.handlebars.internal.HbsParserFactory;
 import com.github.jknack.handlebars.io.ClassPathTemplateLoader;
 import com.github.jknack.handlebars.io.CompositeTemplateLoader;
@@ -206,7 +210,7 @@ public class Handlebars implements HelperRegistry {
      * For example:
      * </p>
      * <p>
-     * <code>"bread" & "butter"</code>
+     * <code>"bread" {@literal &} "butter"</code>
      * </p>
      * becomes:
      *
@@ -306,6 +310,7 @@ public class Handlebars implements HelperRegistry {
    * If true, templates will be deleted once applied. Useful, in some advanced template inheritance
    * use cases. Default is: false.
    * At any time you can override the default setup with:
+   *
    * <pre>
    * {{#block "footer" delete-after-merge=true}}
    * </pre>
@@ -331,6 +336,12 @@ public class Handlebars implements HelperRegistry {
    * The end delimiter.
    */
   private String endDelimiter = DELIM_END;
+
+  /** Location of the handlebars.js file. */
+  private String handlebarsJsFile = "/handlebars-v2.0.0.js";
+
+  /** List of formatters. */
+  private List<Formatter> formatters = new ArrayList<Formatter>();
 
   /**
    * Creates a new {@link Handlebars} with no cache.
@@ -465,6 +476,7 @@ public class Handlebars implements HelperRegistry {
    * @param helper The helper object. Required.
    * @return This handlebars.
    */
+  @Override
   public <H> Handlebars registerHelperMissing(final Helper<H> helper) {
     return registerHelper(HELPER_MISSING, helper);
   }
@@ -523,7 +535,9 @@ public class Handlebars implements HelperRegistry {
    * </ul>
    *
    * Only static methods will be registered as helpers.
-   * <p>Enums are supported too</p>
+   * <p>
+   * Enums are supported too
+   * </p>
    *
    * @param helperSource The helper source. Enums are supported. Required.
    * @return This handlebars object.
@@ -845,14 +859,15 @@ public class Handlebars implements HelperRegistry {
 
   /**
    * If true, templates will be deleted once applied. Useful, in some advanced template inheritance
-   * use cases.  Used by <code>{{#block}} helper</code>. Default is: false.
+   * use cases. Used by <code>{{#block}} helper</code>. Default is: false.
    * At any time you can override the default setup with:
+   *
    * <pre>
    * {{#block "footer" delete-after-merge=true}}
    * </pre>
    *
    * @return True for clearing up templates once they got applied. Used by
-   *      <code>{{#block}} helper</code>.
+   *         <code>{{#block}} helper</code>.
    */
   public boolean deletePartialAfterMerge() {
     return deletePartialAfterMerge;
@@ -860,14 +875,15 @@ public class Handlebars implements HelperRegistry {
 
   /**
    * If true, templates will be deleted once applied. Useful, in some advanced template inheritance
-   * use cases.  Used by <code>{{#block}} helper</code>. Default is: false.
+   * use cases. Used by <code>{{#block}} helper</code>. Default is: false.
    * At any time you can override the default setup with:
+   *
    * <pre>
    * {{#block "footer" delete-after-merge=true}}
    * </pre>
    *
    * @param deletePartialAfterMerge True for clearing up templates once they got applied. Used by
-   *    <code>{{#block}} helper</code>.
+   *        <code>{{#block}} helper</code>.
    *
    * @return This handlebars object.
    */
@@ -878,14 +894,15 @@ public class Handlebars implements HelperRegistry {
 
   /**
    * If true, templates will be deleted once applied. Useful, in some advanced template inheritance
-   * use cases.  Used by <code>{{#block}} helper</code>. Default is: false.
+   * use cases. Used by <code>{{#block}} helper</code>. Default is: false.
    * At any time you can override the default setup with:
+   *
    * <pre>
    * {{#block "footer" delete-after-merge=true}}
    * </pre>
    *
    * @param deletePartialAfterMerge True for clearing up templates once they got applied. Used by
-   *    <code>{{#block}} helper</code>.
+   *        <code>{{#block}} helper</code>.
    */
   public void setDeletePartialAfterMerge(final boolean deletePartialAfterMerge) {
     this.deletePartialAfterMerge = deletePartialAfterMerge;
@@ -990,6 +1007,87 @@ public class Handlebars implements HelperRegistry {
     this.escapingStrategy = notNull(escapingStrategy,
         "The escaping strategy is required.");
     return this;
+  }
+
+
+  /**
+   * @return A formatter chain.
+   */
+  public Formatter.Chain getFormatter() {
+    return new FormatterChain(formatters);
+  }
+
+  /**
+   * Add a new variable formatter.
+   *
+   * <pre>
+   *
+   * Handlebars hbs = new Handlebars();
+   *
+   * hbs.with(new Formatter() {
+   *   public Object format(Object value, Chain next) {
+   *    if (value instanceof Date) {
+   *      return ((Date) value).getTime();
+   *    }
+   *    return next.format(value);
+   *   }
+   * });
+   *
+   * </pre>
+   *
+   * @param formatter A formatter.
+   * @return This handlebars object.
+   */
+  public Handlebars with(final Formatter formatter) {
+    notNull(formatter, "A formatter is required.");
+
+    formatters.add(formatter);
+
+    return this;
+  }
+
+  /**
+   * Set the handlebars.js location used it to compile/precompile template to JavaScript.
+   * <p>
+   * Using handlebars.js 2.x:
+   * </p>
+   *
+   * <pre>
+   *   Handlebars handlebars = new Handlebars()
+   *      .withHandlberasJs("handlebars-v2.0.0.js");
+   * </pre>
+   * <p>
+   * Using handlebars.js 1.x:
+   * </p>
+   *
+   * <pre>
+   *   Handlebars handlebars = new Handlebars()
+   *      .withHandlberasJs("handlebars-v1.3.0.js");
+   * </pre>
+   *
+   * Default handlebars.js is <code>handlebars-v2.0.0.js</code>.
+   *
+   * @param location A classpath location of the handlebar.js file.
+   * @return This instance of Handlebars.
+   */
+  public Handlebars handlebarsJsFile(final String location) {
+    this.handlebarsJsFile = notEmpty(location, "A handlebars.js location is required.");
+    if (!this.handlebarsJsFile.startsWith("/")) {
+      this.handlebarsJsFile = "/" + handlebarsJsFile;
+    }
+    URL resource = getClass().getResource(handlebarsJsFile);
+    if (resource == null) {
+      throw new IllegalArgumentException("File not found: " + handlebarsJsFile);
+    }
+    return this;
+  }
+
+  /**
+   * @return Classpath location of the handlebars.js file. Default is:
+   *         <code>handlebars-v1.3.0.js</code>
+   */
+  public String handlebarsJsFile() {
+    return handlebarsJsFile;
   }
 
   /**

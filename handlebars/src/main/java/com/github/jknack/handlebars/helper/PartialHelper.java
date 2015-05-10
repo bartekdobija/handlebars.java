@@ -21,12 +21,13 @@ import static org.apache.commons.lang3.Validate.isTrue;
 
 import java.io.IOException;
 
+import com.github.jknack.handlebars.Context;
 import com.github.jknack.handlebars.Helper;
 import com.github.jknack.handlebars.Options;
 
 /**
  * The partial registry helper. It stores templates in the current execution
- * context. Later the {@link #BLOCK} helper read the registry and apply the
+ * context. Later the {@link BlockHelper} helper read the registry and apply the
  * template.
  *
  * @author edgar.espina
@@ -51,6 +52,8 @@ public class PartialHelper implements Helper<Object> {
         context);
 
     options.partial((String) context, options.fn);
+    options.data(Context.PARTIALS + "#" + context + "#hash", options.hash);
+    options.data(Context.PARTIALS + "#" + context + "#type", options.tagType);
     return null;
   }
 }

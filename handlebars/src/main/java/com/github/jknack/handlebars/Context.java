@@ -29,7 +29,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
-import java.util.StringTokenizer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -238,6 +237,11 @@ public class Context {
    * Index access expression.
    */
   private static final Pattern INT = Pattern.compile("\\d+");
+
+  /**
+   * Parser for path expressions.
+   */
+  private static final PropertyPathParser PATH_PARSER = new PropertyPathParser(PATH_SEPARATOR);
 
   /**
    * The qualified name for partials. Internal use.
@@ -506,23 +510,13 @@ public class Context {
   }
 
   /**
-   * Split the property name by '.' and create an array of it.
+   * Split the property name by '.' (except within an escaped blocked) and create an array of it.
    *
    * @param key The property's name.
    * @return A path representation of the property (array based).
    */
   private String[] toPath(final String key) {
-    StringTokenizer tokenizer = new StringTokenizer(key, PATH_SEPARATOR);
-    int len = tokenizer.countTokens();
-    if (len == 1) {
-      return new String[]{key };
-    }
-    String[] path = new String[len];
-    int i = 0;
-    while (tokenizer.hasMoreTokens()) {
-      path[i++] = tokenizer.nextToken();
-    }
-    return path;
+    return PATH_PARSER.parsePath(key);
   }
 
   /**
@@ -572,36 +566,58 @@ public class Context {
    * @param expression The access expression.
    * @return The associated value.
    */
-  @SuppressWarnings("rawtypes")
   private Object resolve(final Object current, final String expression) {
     // Null => null
     if (current == null) {
       return null;
     }
 
-    // array or list access?
+    // array/list access or invalid Java identifiers wrapped with []
     Matcher matcher = IDX.matcher(expression);
     if (matcher.matches()) {
       String idx = matcher.group(1);
       if (INT.matcher(idx).matches()) {
-        // It is a number, check if the current value is a index base object.
-        int pos = Integer.parseInt(idx);
-        try {
-          if (current instanceof List) {
-            return ((List) current).get(pos);
-          } else if (current.getClass().isArray()) {
-            return Array.get(current, pos);
-          }
-        } catch (IndexOutOfBoundsException exception) {
-          // Index is outside of range, do as JS
-          return null;
+        Object result = resolveArrayAccess(current, idx);
+        if (result != NULL) {
+          return result;
         }
       }
       // It is not a index base object, defaults to string property lookup
       // (usually not a valid Java identifier)
       return resolver.resolve(current, idx);
     }
+    // array or list access, exclusive
+    if (INT.matcher(expression).matches()) {
+      Object result = resolveArrayAccess(current, expression);
+      if (result != NULL) {
+        return result;
+      }
+    }
     return resolver.resolve(current, expression);
+  }
+
+  /**
+   * Resolve a array or list access using idx.
+   *
+   * @param current The current scope.
+   * @param idx The index of the array or list.
+   * @return An object at the given location or null.
+   */
+  @SuppressWarnings("rawtypes")
+  private Object resolveArrayAccess(final Object current, final String idx) {
+    // It is a number, check if the current value is a index base object.
+    int pos = Integer.parseInt(idx);
+    try {
+      if (current instanceof List) {
+        return ((List) current).get(pos);
+      } else if (current.getClass().isArray()) {
+        return Array.get(current, pos);
+      }
+    } catch (IndexOutOfBoundsException exception) {
+      // Index is outside of range, fallback to null as in handlebar.js
+      return null;
+    }
+    return NULL;
   }
 
   /**
